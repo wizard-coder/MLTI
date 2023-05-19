@@ -32,10 +32,11 @@ parser.add_argument('--resume', default=0, type=int, help='resume training if th
 parser.add_argument('--train', default=1, type=int, help='True to train, False to test.')
 parser.add_argument('--mix', default=0, type=int, help='use mixup or not')
 parser.add_argument('--trial', default=0, type=int, help='trail for each layer')
+parser.add_argument("--device", default='cuda:0', type=str, help="cuda:num or mps:num or cpu")
 
 args = parser.parse_args()
 print(args)
-assert torch.cuda.is_available()
+
 torch.backends.cudnn.benchmark = True
 
 random.seed(1)
@@ -66,8 +67,8 @@ def train(args, protonet, optimiser):
         if step > args.metatrain_iterations:
             break
 
-        x_spt, y_spt, x_qry, y_qry = x_spt.squeeze(0).cuda(), y_spt.squeeze(0).cuda(), \
-                                     x_qry.squeeze(0).cuda(), y_qry.squeeze(0).cuda()
+        x_spt, y_spt, x_qry, y_qry = x_spt.squeeze(0).to(args.device), y_spt.squeeze(0).to(args.device), \
+                                     x_qry.squeeze(0).to(args.device), y_qry.squeeze(0).to(args.device)
         task_losses = []
         task_acc = []
 
@@ -119,8 +120,8 @@ def test(args, protonet):
     for step, (x_spt, y_spt, x_qry, y_qry) in enumerate(dataloader):
         if step > 600:
             break
-        x_spt, y_spt, x_qry, y_qry = x_spt.squeeze(0).to("cuda"), y_spt.squeeze(0).to("cuda"), \
-                                     x_qry.squeeze(0).to("cuda"), y_qry.squeeze(0).to("cuda")
+        x_spt, y_spt, x_qry, y_qry = x_spt.squeeze(0).to(args.device), y_spt.squeeze(0).to(args.device), \
+                                     x_qry.squeeze(0).to(args.device), y_qry.squeeze(0).to(args.device)
         _, acc_val = protonet(x_spt, y_spt, x_qry, y_qry)
         res_acc.append(acc_val.item())
 
@@ -131,7 +132,7 @@ def test(args, protonet):
 
 
 def main():
-    protonet = Protonet(args).cuda()
+    protonet = Protonet(args).to(args.device)
 
     if args.resume == 1 and args.train == 1:
         model_file = '{0}/{2}/model{1}'.format(args.logdir, args.test_epoch, exp_string)

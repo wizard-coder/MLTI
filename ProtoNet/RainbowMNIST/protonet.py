@@ -12,6 +12,7 @@ class Protonet(nn.Module):
         self.args = args
         self.learner = learner
         self.dist = Beta(torch.FloatTensor([2]), torch.FloatTensor([2]))
+        self.device = args.device
 
     def forward(self, xs, ys, xq, yq):
         x = torch.cat([xs, xq], 0)
@@ -69,7 +70,7 @@ class Protonet(nn.Module):
         return mixed_x, lam
 
     def forward_crossmix(self, x1s, y1s, x1q, y1q, x2s, y2s, x2q, y2q):
-        lam_mix = self.dist.sample().to("cuda")
+        lam_mix = self.dist.sample().to(self.device)
 
         task_2_shuffle_id = np.arange(self.args.num_classes)
         np.random.shuffle(task_2_shuffle_id)

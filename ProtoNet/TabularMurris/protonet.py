@@ -13,6 +13,7 @@ class Protonet(nn.Module):
         self.args = args
         self.learner = FCNet(args=args, x_dim=2866, hid_dim=64, dropout=0.2)
         self.dist = Beta(torch.FloatTensor([2]), torch.FloatTensor([2]))
+        self.device = args.device
 
     def forward(self, xs, ys, xq, yq):
         x = torch.cat([xs, xq], 0)
@@ -42,7 +43,7 @@ class Protonet(nn.Module):
         return loss_val, acc_val
 
     def forward_within(self, xs, ys, xq, yq):
-        lam_mix = self.dist.sample().to("cuda")
+        lam_mix = self.dist.sample().to(self.device)
 
         z = self.learner(xs)
 
@@ -100,7 +101,7 @@ class Protonet(nn.Module):
 
 
     def forward_crossmix(self, x1s, y1s, x1q, y1q, x2s, y2s, x2q, y2q):
-        lam_mix = self.dist.sample().to("cuda")
+        lam_mix = self.dist.sample().to(self.device)
 
         task_2_shuffle_id = np.arange(self.args.num_classes)
         np.random.shuffle(task_2_shuffle_id)

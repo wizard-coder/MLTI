@@ -37,12 +37,12 @@ parser.add_argument('--train', default=1, type=int, help='True to train, False t
 parser.add_argument('--mix', default=0, type=int, help='use mixup or not')
 parser.add_argument('--trial', default=0, type=int, help='trail for each layer')
 parser.add_argument('--ratio', default=1.0, type=float, help='the ratio of meta-training tasks')
+parser.add_argument("--device", default='cuda:0', type=str, help="cuda:num or mps:num or cpu")
 
 
 args = parser.parse_args()
 print(args)
 
-assert torch.cuda.is_available()
 torch.backends.cudnn.benchmark = True
 
 random.seed(1)
@@ -77,8 +77,8 @@ def train(args, protonet, optimiser):
     for step, (x_spt, y_spt, x_qry, y_qry) in enumerate(dataloader):
         if step > args.metatrain_iterations:
             break
-        x_spt, y_spt, x_qry, y_qry = x_spt.squeeze(0).cuda(), y_spt.squeeze(0).cuda(), \
-                                     x_qry.squeeze(0).cuda(), y_qry.squeeze(0).cuda()
+        x_spt, y_spt, x_qry, y_qry = x_spt.squeeze(0).to(args.device), y_spt.squeeze(0).to(args.device), \
+                                     x_qry.squeeze(0).to(args.device), y_qry.squeeze(0).to(args.device)
         task_losses = []
         task_acc = []
 
@@ -132,8 +132,8 @@ def test(args, protonet):
     for step, (x_spt, y_spt, x_qry, y_qry) in enumerate(dataloader):
         if step > 600:
             break
-        x_spt, y_spt, x_qry, y_qry = x_spt.squeeze(0).to("cuda"), y_spt.squeeze(0).to("cuda"), \
-                                     x_qry.squeeze(0).to("cuda"), y_qry.squeeze(0).to("cuda")
+        x_spt, y_spt, x_qry, y_qry = x_spt.squeeze(0).to(args.device), y_spt.squeeze(0).to(args.device), \
+                                     x_qry.squeeze(0).to(args.device), y_qry.squeeze(0).to(args.device)
         _, acc_val = protonet(x_spt, y_spt, x_qry, y_qry)
         res_acc.append(acc_val.item())
 
@@ -144,7 +144,7 @@ def test(args, protonet):
 
 
 def main():
-    learner = Conv_Standard(args=args, x_dim=3, hid_dim=args.num_filters, z_dim=args.num_filters).cuda()
+    learner = Conv_Standard(args=args, x_dim=3, hid_dim=args.num_filters, z_dim=args.num_filters).to(args.device)
 
     protonet = Protonet(args, learner)
 
