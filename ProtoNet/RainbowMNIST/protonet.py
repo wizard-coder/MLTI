@@ -45,8 +45,8 @@ class Protonet(nn.Module):
         W = size[2]
         H = size[3]
         cut_rat = np.sqrt(1. - lam.cpu())
-        cut_w = np.int(W * cut_rat)
-        cut_h = np.int(H * cut_rat)
+        cut_w = int(W * cut_rat)
+        cut_h = int(H * cut_rat)
 
         # uniform
         cx = np.random.randint(W)
@@ -70,8 +70,12 @@ class Protonet(nn.Module):
         return mixed_x, lam
 
     def forward_crossmix(self, x1s, y1s, x1q, y1q, x2s, y2s, x2q, y2q):
+        # cutmix interpolation을 사용함
+
+        # beta distribution에서 random sampling
         lam_mix = self.dist.sample().to(self.device)
 
+        # class를 suffling. support와 query는 동일한 class로 섞임. 그래서 딱히 label은 cutmix를 적용안하고 task1의 label을 그대로 사용함
         task_2_shuffle_id = np.arange(self.args.num_classes)
         np.random.shuffle(task_2_shuffle_id)
         task_2_shuffle_id_s = np.array(
@@ -94,13 +98,18 @@ class Protonet(nn.Module):
 
         z_dim = z.size(-1)
 
+        # support set의 prototype을 구함, num class x z_dim
         z_proto = z[:self.args.num_classes * self.args.update_batch_size].view(self.args.num_classes,
                                                                                self.args.update_batch_size, z_dim).mean(
             1)
+        
+        # query set의 embedding 값, (num classes x qeury sample) x z_dim
         zq = z[self.args.num_classes * self.args.update_batch_size:]
 
+        # proto와의 거리 구함, (num classes x qeury sample) x num classes(num proto)
         dists = euclidean_dist(zq, z_proto)
 
+        # loss 구함, (num classes x qeury sample) x num classes(num proto)
         log_p_y = F.log_softmax(-dists, dim=1)
 
         loss_val = []

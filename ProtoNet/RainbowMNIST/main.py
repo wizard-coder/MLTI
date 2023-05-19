@@ -41,6 +41,8 @@ parser.add_argument("--device", default='cuda:0', type=str, help="cuda:num or mp
 
 
 args = parser.parse_args()
+args.datadir = os.path.expanduser(args.datadir)
+args.logdir = os.path.expanduser(args.logdir)
 print(args)
 
 torch.backends.cudnn.benchmark = True
@@ -85,6 +87,8 @@ def train(args, protonet, optimiser):
         for meta_batch in range(args.meta_batch_size):
             if args.mix:
                 mix_c = random.randint(0, 3)
+                # 75% cross task interpolation, 25% intra task interpolation
+                # 꼭 위의 확률은 아닌게 batch를 구성할때 task를 랜덤하게 뽑기 때문에 하나의 batch안에 동일한 task가 있을수도 있음
                 if mix_c < 3:
                     second_id = (meta_batch + 1) % args.meta_batch_size
                     loss_val, acc_val = protonet.forward_crossmix(x_spt[meta_batch], y_spt[meta_batch],
@@ -144,8 +148,10 @@ def test(args, protonet):
 
 
 def main():
+    # base learner
     learner = Conv_Standard(args=args, x_dim=3, hid_dim=args.num_filters, z_dim=args.num_filters).to(args.device)
 
+    # protonet
     protonet = Protonet(args, learner)
 
     if args.resume == 1 and args.train == 1:
