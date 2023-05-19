@@ -42,6 +42,8 @@ parser.add_argument("--device", default='cuda:0', type=str, help="cuda:num or mp
 
 
 args = parser.parse_args()
+args.datadir = os.path.expanduser(args.datadir)
+args.logdir = os.path.expanduser(args.logdir)
 print(args)
 
 if args.datasource == 'isic':

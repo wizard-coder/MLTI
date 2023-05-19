@@ -35,6 +35,8 @@ parser.add_argument('--trial', default=0, type=int, help='trail for each layer')
 parser.add_argument("--device", default='cuda:0', type=str, help="cuda:num or mps:num or cpu")
 
 args = parser.parse_args()
+args.datadir = os.path.expanduser(args.datadir)
+args.logdir = os.path.expanduser(args.logdir)
 print(args)
 
 torch.backends.cudnn.benchmark = True
