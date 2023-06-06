@@ -6,14 +6,14 @@ import numpy as np
 import torch
 from PIL import Image
 from torch.utils.data import Dataset
-from torchvision.transforms import transforms
+from torchvision import transforms
 import pickle
 import ipdb
 
 
 class DermNet(Dataset):
 
-    def __init__(self, args, mode):
+    def __init__(self, args, mode, transform=None):
         super(DermNet, self).__init__()
         self.args = args
         self.nb_classes = args.num_classes
@@ -34,15 +34,20 @@ class DermNet(Dataset):
 
         if mode == 'train':
             sel_class_num = int(self.args.ratio*150)
-            print(sel_class_num)
             self.used_diseases = [eachid[0]
                                   for eachid in num_data[:sel_class_num]]
         elif mode == 'test':
             self.used_diseases = [eachid[0] for eachid in num_data[150:]]
 
-        for eachkey in self.data.keys():
-            self.data[eachkey] = torch.tensor(np.transpose(
-                self.data[eachkey] / np.float32(255), (0, 3, 1, 2)))
+        self.transform = transform
+        if self.transform is None:
+            for eachkey in self.data.keys():
+                self.data[eachkey] = torch.tensor(np.transpose(
+                    self.data[eachkey] / np.float32(255), (0, 3, 1, 2)))
+        else:
+            for eachkey in self.data.keys():
+                self.data[eachkey] = torch.tensor(np.transpose(
+                    self.data[eachkey], (0, 3, 1, 2)))
 
     def __len__(self):
         return self.args.metatrain_iterations * self.args.meta_batch_size
@@ -67,14 +72,25 @@ class DermNet(Dataset):
                         self.data[self.choose_classes[j]].shape[0])
                     np.random.shuffle(self.samples_idx)
                     choose_samples = self.samples_idx[:self.nb_samples_per_class]
-                    support_x[meta_batch_id][j * self.k_shot:(j + 1) * self.k_shot] = self.data[
-                        self.choose_classes[
-                            j]][choose_samples[
-                                :self.k_shot], ...]
-                    query_x[meta_batch_id][j * self.k_query:(j + 1) * self.k_query] = self.data[
-                        self.choose_classes[
-                            j]][choose_samples[
-                                self.k_shot:], ...]
+
+                    if self.transform is None:
+                        support_x[meta_batch_id][j * self.k_shot:(j + 1) * self.k_shot] = self.data[
+                            self.choose_classes[
+                                j]][choose_samples[
+                                    :self.k_shot], ...]
+                        query_x[meta_batch_id][j * self.k_query:(j + 1) * self.k_query] = self.data[
+                            self.choose_classes[
+                                j]][choose_samples[
+                                    self.k_shot:], ...]
+                    else:
+                        support_x[meta_batch_id][j * self.k_shot:(j + 1) * self.k_shot] = self.transform(self.data[
+                            self.choose_classes[
+                                j]][choose_samples[
+                                    :self.k_shot], ...]) / 255.0
+                        query_x[meta_batch_id][j * self.k_query:(j + 1) * self.k_query] = self.transform(self.data[
+                            self.choose_classes[
+                                j]][choose_samples[
+                                    self.k_shot:], ...]) / 255.0
                     support_y[meta_batch_id][j *
                                              self.k_shot:(j + 1) * self.k_shot] = j
                     query_y[meta_batch_id][j *
@@ -104,14 +120,21 @@ class DermNet(Dataset):
                 np.random.shuffle(self.samples_idx)
                 choose_samples = self.samples_idx
                 # idx1 = idx[0:self.k_shot + self.k_query]
-                support_x[j * self.k_shot:(j + 1) * self.k_shot] = self.data[
-                    self.choose_classes[
-                        j]][choose_samples[
-                            :self.k_shot], ...]
+                if self.transform is None:
+                    support_x[j * self.k_shot:(j + 1) * self.k_shot] = self.data[
+                        self.choose_classes[
+                            j]][choose_samples[
+                                :self.k_shot], ...]
+                    query_x[query_split_loc_list[j]:query_split_loc_list[j+1]] = self.data[self.choose_classes[j]][
+                        choose_samples[self.k_shot:], ...]
+                else:
+                    support_x[j * self.k_shot:(j + 1) * self.k_shot] = self.transform(self.data[
+                        self.choose_classes[
+                            j]][choose_samples[
+                                :self.k_shot], ...]) / 255.0
+                    query_x[query_split_loc_list[j]:query_split_loc_list[j+1]] = self.transform(self.data[self.choose_classes[j]][
+                        choose_samples[self.k_shot:], ...]) / 255.0
                 support_y[j * self.k_shot:(j + 1) * self.k_shot] = j
-
-                query_x[query_split_loc_list[j]:query_split_loc_list[j+1]] = self.data[self.choose_classes[j]][
-                    choose_samples[self.k_shot:], ...]
                 query_y[query_split_loc_list[j]:query_split_loc_list[j+1]] = j
 
         return support_x, torch.LongTensor(support_y), query_x, torch.LongTensor(query_y)
@@ -119,7 +142,7 @@ class DermNet(Dataset):
 
 class ISIC(Dataset):
 
-    def __init__(self, args, mode):
+    def __init__(self, args, mode, transform=None):
         super(ISIC, self).__init__()
         self.args = args
         self.nb_classes = args.num_classes
@@ -137,9 +160,15 @@ class ISIC(Dataset):
 
         self.data = pickle.load(open(self.data_file, 'rb'))
 
-        for eachkey in self.data.keys():
-            self.data[eachkey] = torch.tensor(np.transpose(
-                self.data[eachkey] / np.float32(255), (0, 3, 1, 2)))
+        self.transform = transform
+        if self.transform is None:
+            for eachkey in self.data.keys():
+                self.data[eachkey] = torch.tensor(np.transpose(
+                    self.data[eachkey] / np.float32(255), (0, 3, 1, 2)))
+        else:
+            for eachkey in self.data.keys():
+                self.data[eachkey] = torch.tensor(np.transpose(
+                    self.data[eachkey], (0, 3, 1, 2)))
 
     def __len__(self):
         return self.args.metatrain_iterations * self.args.meta_batch_size
@@ -165,14 +194,25 @@ class ISIC(Dataset):
                     np.random.shuffle(self.samples_idx)
                     choose_samples = self.samples_idx[:self.nb_samples_per_class]
                     # idx1 = idx[0:self.k_shot + self.k_query]
-                    support_x[meta_batch_id][j * self.k_shot:(j + 1) * self.k_shot] = self.data[
-                        self.choose_classes[
-                            j]][choose_samples[
-                                :self.k_shot], ...]
-                    query_x[meta_batch_id][j * self.k_query:(j + 1) * self.k_query] = self.data[
-                        self.choose_classes[
-                            j]][choose_samples[
-                                self.k_shot:], ...]
+
+                    if self.transform is None:
+                        support_x[meta_batch_id][j * self.k_shot:(j + 1) * self.k_shot] = self.data[
+                            self.choose_classes[
+                                j]][choose_samples[
+                                    :self.k_shot], ...]
+                        query_x[meta_batch_id][j * self.k_query:(j + 1) * self.k_query] = self.data[
+                            self.choose_classes[
+                                j]][choose_samples[
+                                    self.k_shot:], ...]
+                    else:
+                        support_x[meta_batch_id][j * self.k_shot:(j + 1) * self.k_shot] = self.transform(self.data[
+                            self.choose_classes[
+                                j]][choose_samples[
+                                    :self.k_shot], ...]) / 255.0
+                        query_x[meta_batch_id][j * self.k_query:(j + 1) * self.k_query] = self.transform(self.data[
+                            self.choose_classes[
+                                j]][choose_samples[
+                                    self.k_shot:], ...]) / 255.0
                     support_y[meta_batch_id][j *
                                              self.k_shot:(j + 1) * self.k_shot] = j
                     query_y[meta_batch_id][j *
@@ -197,22 +237,37 @@ class ISIC(Dataset):
                 np.random.shuffle(self.samples_idx)
                 choose_samples = self.samples_idx
                 # idx1 = idx[0:self.k_shot + self.k_query]
-                support_x[j * self.k_shot:(j + 1) * self.k_shot] = self.data[
-                    self.choose_classes[
-                        j]][choose_samples[
-                            :self.k_shot], ...]
+
+                if self.transform is None:
+                    support_x[j * self.k_shot:(j + 1) * self.k_shot] = self.data[
+                        self.choose_classes[
+                            j]][choose_samples[
+                                :self.k_shot], ...]
+                else:
+                    support_x[j * self.k_shot:(j + 1) * self.k_shot] = self.transform(self.data[
+                        self.choose_classes[
+                            j]][choose_samples[
+                                :self.k_shot], ...]) / 255.0
                 support_y[j * self.k_shot:(j + 1) * self.k_shot] = j
 
                 query_split_loc = self.data[self.choose_classes[0]
                                             ].shape[0]-self.k_shot
 
                 if j == 0:
-                    query_x[:query_split_loc] = self.data[self.choose_classes[0]][
-                        choose_samples[self.k_shot:], ...]
+                    if self.transform is None:
+                        query_x[:query_split_loc] = self.data[self.choose_classes[0]][
+                            choose_samples[self.k_shot:], ...]
+                    else:
+                        query_x[:query_split_loc] = self.transform(self.data[self.choose_classes[0]][
+                            choose_samples[self.k_shot:], ...]) / 255.0
                     query_y[:query_split_loc] = j
                 else:
-                    query_x[query_split_loc:] = self.data[self.choose_classes[1]][
-                        choose_samples[self.k_shot:], ...]
+                    if self.transform is None:
+                        query_x[query_split_loc:] = self.data[self.choose_classes[1]][
+                            choose_samples[self.k_shot:], ...]
+                    else:
+                        query_x[query_split_loc:] = self.transform(self.data[self.choose_classes[1]][
+                            choose_samples[self.k_shot:], ...]) / 255.0
                     query_y[query_split_loc:] = j
 
         return support_x, torch.LongTensor(support_y), query_x, torch.LongTensor(query_y)
@@ -220,7 +275,7 @@ class ISIC(Dataset):
 
 class MiniImagenet(Dataset):
 
-    def __init__(self, args, mode):
+    def __init__(self, args, mode, transform=None):
         super(MiniImagenet, self).__init__()
         self.args = args
         self.nb_classes = args.num_classes
@@ -250,8 +305,13 @@ class MiniImagenet(Dataset):
                                            56,  1, 28, 48, 54, 37, 19, 62, 41, 38,  2, 53, 29])
         self.num_train_use_class = int(64*self.args.ratio)
 
-        self.data = torch.tensor(np.transpose(
-            self.data / np.float32(255), (0, 1, 4, 2, 3)))
+        self.transform = transform
+        if self.transform is None:
+            self.data = torch.tensor(np.transpose(
+                self.data / np.float32(255), (0, 1, 4, 2, 3)))
+        else:
+            self.data = torch.tensor(np.transpose(
+                self.data, (0, 1, 4, 2, 3)))
 
     def __len__(self):
         return self.args.metatrain_iterations*self.args.meta_batch_size
@@ -279,14 +339,24 @@ class MiniImagenet(Dataset):
             for j in range(self.nb_classes):
                 np.random.shuffle(self.samples_idx)
                 choose_samples = self.samples_idx[:self.nb_samples_per_class]
-                support_x[meta_batch_id][j * self.k_shot:(j + 1) * self.k_shot] = self.data[
-                    self.choose_classes[
-                        j], choose_samples[
-                            :self.k_shot], ...]
-                query_x[meta_batch_id][j * self.k_query:(j + 1) * self.k_query] = self.data[
-                    self.choose_classes[
-                        j], choose_samples[
-                            self.k_shot:], ...]
+                if self.transform is None:
+                    support_x[meta_batch_id][j * self.k_shot:(j + 1) * self.k_shot] = self.data[
+                        self.choose_classes[
+                            j], choose_samples[
+                                :self.k_shot], ...]
+                    query_x[meta_batch_id][j * self.k_query:(j + 1) * self.k_query] = self.data[
+                        self.choose_classes[
+                            j], choose_samples[
+                                self.k_shot:], ...]
+                else:
+                    support_x[meta_batch_id][j * self.k_shot:(j + 1) * self.k_shot] = self.transform(self.data[
+                        self.choose_classes[
+                            j], choose_samples[
+                                :self.k_shot], ...]) / 255.0
+                    query_x[meta_batch_id][j * self.k_query:(j + 1) * self.k_query] = self.transform(self.data[
+                        self.choose_classes[
+                            j], choose_samples[
+                                self.k_shot:], ...]) / 255.0
                 support_y[meta_batch_id][j *
                                          self.k_shot:(j + 1) * self.k_shot] = j
                 query_y[meta_batch_id][j *
@@ -297,7 +367,7 @@ class MiniImagenet(Dataset):
 
 class RainbowMNIST(Dataset):
 
-    def __init__(self, args, mode):
+    def __init__(self, args, mode, transform=None):
         super(RainbowMNIST, self).__init__()
         self.args = args
         self.nb_classes = args.num_classes  # 10
@@ -321,19 +391,19 @@ class RainbowMNIST(Dataset):
         # task의 수, 총 56개 task
         self.num_groupid = len(self.data.keys())
 
+        self.transform = transform
         for group_id in range(self.num_groupid):
-            # 왜 sample 중에 20개씩만 쓰지?(논문에는 언급없음) 풀로 쓰도록 수정
-            # self.data[group_id]['labels'] = self.data[group_id]['labels'].reshape(10, 100)[
-            #     :, :20]
-            # self.data[group_id]['images'] = self.data[group_id]['images'].reshape(
-            #     10, 100, 28, 28, 3)[:, :20, ...]
             self.data[group_id]['labels'] = self.data[group_id]['labels'].reshape(
                 10, 100)
             self.data[group_id]['images'] = self.data[group_id]['images'].reshape(
                 10, 100, 28, 28, 3)
             # num class x num sample x 3 x 28 x 28
-            self.data[group_id]['images'] = torch.tensor(
-                np.transpose(self.data[group_id]['images'], (0, 1, 4, 2, 3)))
+            if self.transform is None:
+                self.data[group_id]['images'] = torch.tensor(
+                    np.transpose(self.data[group_id]['images'], (0, 1, 4, 2, 3)))
+            else:
+                self.data[group_id]['images'] = torch.tensor(
+                    np.transpose(self.data[group_id]['images'], (0, 1, 4, 2, 3)) * 255.0, dtype=torch.uint8)
 
         if self.mode == 'train':
             self.sel_group_id = np.array([49,  8, 19, 47, 25, 27, 42, 50, 24, 40,  3, 45,  6, 41,  2, 17, 14,
@@ -376,10 +446,16 @@ class RainbowMNIST(Dataset):
                 choose_samples = self.samples_idx[:self.nb_samples_per_class]
                 # j class에 k shot만큼 support, 나머지는 query
                 # (class x sample) 순임
-                support_x[meta_batch_id][j * self.k_shot:(
-                    j + 1) * self.k_shot] = self.data[self.choose_group]['images'][j, choose_samples[:self.k_shot], ...]
-                query_x[meta_batch_id][j * self.k_query:(j + 1) * self.k_query] = self.data[self.choose_group]['images'][j, choose_samples[
-                    self.k_shot:], ...]
+                if self.transform is None:
+                    support_x[meta_batch_id][j * self.k_shot:(
+                        j + 1) * self.k_shot] = self.data[self.choose_group]['images'][j, choose_samples[:self.k_shot], ...]
+                    query_x[meta_batch_id][j * self.k_query:(j + 1) * self.k_query] = self.data[self.choose_group]['images'][j, choose_samples[
+                        self.k_shot:], ...]
+                else:
+                    support_x[meta_batch_id][j * self.k_shot:(
+                        j + 1) * self.k_shot] = self.transform(self.data[self.choose_group]['images'][j, choose_samples[:self.k_shot], ...]) / 255.0
+                    query_x[meta_batch_id][j * self.k_query:(j + 1) * self.k_query] = self.transform(self.data[self.choose_group]['images'][j, choose_samples[
+                        self.k_shot:], ...]) / 255.0
                 support_y[meta_batch_id][j *
                                          self.k_shot:(j + 1) * self.k_shot] = j
                 query_y[meta_batch_id][j *

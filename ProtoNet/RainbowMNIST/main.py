@@ -7,6 +7,7 @@ from protonet import Protonet
 from learner import Conv_Standard
 from data_generator import RainbowMNIST
 import re
+from torchvision import transforms
 
 parser = argparse.ArgumentParser(description='MLTI')
 parser.add_argument('--datasource', default='rainbowmnist', type=str,
@@ -56,6 +57,8 @@ parser.add_argument('--train_consistency_test', type=int, default=0, choices=ran
                     help='학습마다 성능차이가 얼마나는지 테스트')
 parser.add_argument('--task_num_consistency_test', type=int, nargs='+',
                     help='test시 tesk num 마다 성능차이 시험')
+parser.add_argument('--augmentation', type=str,
+                    choices=['augmix', 'trivialaug', 'randaug'])
 
 
 args = parser.parse_args()
@@ -76,6 +79,8 @@ if args.mix:
 exp_string += '.trial{}'.format(args.trial)
 if args.ratio < 1.0:
     exp_string += '.ratio{}'.format(args.ratio)
+if args.augmentation is not None:
+    exp_string += f'.aug_{args.augmentation}'
 
 print(exp_string)
 
@@ -85,7 +90,17 @@ def train(args, protonet, optimiser):
     Save_Iter = 500
     print_loss, print_acc, print_loss_support = 0.0, 0.0, 0.0
 
-    dataloader = RainbowMNIST(args, 'train')
+    transform = None
+    if args.augmentation == "augmux":
+        transform = transforms.Compose([transforms.AugMix()])
+    elif args.augmentation == "trivial":
+        transform = transforms.Compose(
+            [transforms.TrivialAugmentWide()])
+    elif args.augmentation == "rand":
+        transform = transforms.Compose(
+            [transforms.RandAugment()])
+
+    dataloader = RainbowMNIST(args, 'train', transform=transform)
 
     if not os.path.exists(args.logdir + '/' + exp_string + '/'):
         os.makedirs(args.logdir + '/' + exp_string + '/')
