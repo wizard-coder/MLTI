@@ -8,6 +8,7 @@ import torch
 
 plt.rcParams["savefig.bbox"] = 'tight'
 
+
 def show(imgs):
     if not isinstance(imgs, list):
         imgs = [imgs]
@@ -18,7 +19,9 @@ def show(imgs):
         axs[0, i].imshow(np.asarray(img))
         axs[0, i].set(xticklabels=[], yticklabels=[], xticks=[], yticks=[])
 
-data = pickle.load(open(os.path.expanduser('~/research/data/PHD/lecture/AI602/MLTI/RainbowMNIST/rainbowmnist_all.pkl') , 'rb'))
+
+data = pickle.load(open(os.path.expanduser(
+    '~/research/data/MLTI/RainbowMNIST/rainbowmnist_all.pkl'), 'rb'))
 
 
 num_images = 100

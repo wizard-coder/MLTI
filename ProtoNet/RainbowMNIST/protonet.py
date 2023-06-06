@@ -65,7 +65,8 @@ class Protonet(nn.Module):
 
         mixed_x[:, :, bbx1:bbx2, bby1:bby2] = xs[:, :, bbx1:bbx2, bby1:bby2]
 
-        lam = 1 - ((bbx2 - bbx1) * (bby2 - bby1) / (xq.size()[-1] * xq.size()[-2]))
+        lam = 1 - ((bbx2 - bbx1) * (bby2 - bby1) /
+                   (xq.size()[-1] * xq.size()[-2]))
 
         return mixed_x, lam
 
@@ -102,16 +103,17 @@ class Protonet(nn.Module):
         z_proto = z[:self.args.num_classes * self.args.update_batch_size].view(self.args.num_classes,
                                                                                self.args.update_batch_size, z_dim).mean(
             1)
-        
-        # query set의 embedding 값, (num classes x qeury sample) x z_dim
+
+        # query set의 embedding 값, (n-way x k-shot for query) x z_dim
         zq = z[self.args.num_classes * self.args.update_batch_size:]
 
-        # proto와의 거리 구함, (num classes x qeury sample) x num classes(num proto)
+        # proto와의 거리 구함, (n-way x k-shot for query) x num classes(num proto)
         dists = euclidean_dist(zq, z_proto)
 
-        # loss 구함, (num classes x qeury sample) x num classes(num proto)
+        # softmax, (num classes x qeury sample) x num classes(num proto)
         log_p_y = F.log_softmax(-dists, dim=1)
 
+        # loss 계산, softmax에서 해당 label에 대한 값을 취한것을 모든 qeury에 대해 구함
         loss_val = []
         for i in range(self.args.num_classes * self.args.update_batch_size_eval):
             loss_val.append(-log_p_y[i, y1q[i]])

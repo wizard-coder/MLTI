@@ -65,7 +65,8 @@ class Protonet(nn.Module):
 
         mixed_x[:, :, bbx1:bbx2, bby1:bby2] = xs[:, :, bbx1:bbx2, bby1:bby2]
 
-        lam = 1 - ((bbx2 - bbx1) * (bby2 - bby1) / (xq.size()[-1] * xq.size()[-2]))
+        lam = 1 - ((bbx2 - bbx1) * (bby2 - bby1) /
+                   (xq.size()[-1] * xq.size()[-2]))
 
         return mixed_x, lam
 

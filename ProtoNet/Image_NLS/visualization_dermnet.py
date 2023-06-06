@@ -8,6 +8,7 @@ import torch
 
 plt.rcParams["savefig.bbox"] = 'tight'
 
+
 def show(imgs):
     if not isinstance(imgs, list):
         imgs = [imgs]
@@ -18,7 +19,9 @@ def show(imgs):
         axs[0, i].imshow(np.asarray(img))
         axs[0, i].set(xticklabels=[], yticklabels=[], xticks=[], yticks=[])
 
-data = pickle.load(open(os.path.expanduser('~/research/data/PHD/lecture/AI602/MLTI/DermNet/Dermnet_all_84.pkl') , 'rb'))
+
+data = pickle.load(open(os.path.expanduser(
+    '~/research/data/MLTI/DermNet/Dermnet_all_84.pkl'), 'rb'))
 
 for eachkey in data.keys():
     data[eachkey] = torch.tensor(np.transpose(data[eachkey], (0, 3, 1, 2)))
