@@ -7,7 +7,7 @@ from torchvision import transforms
 
 class RainbowMNIST(Dataset):
 
-    def __init__(self, args, mode, transform=None):
+    def __init__(self, args, mode, transform=None, extreme_dist=None):
         super(RainbowMNIST, self).__init__()
         self.args = args
         self.nb_classes = args.num_classes  # 10
@@ -46,14 +46,68 @@ class RainbowMNIST(Dataset):
                     np.transpose(self.data[group_id]['images'], (0, 1, 4, 2, 3)) * 255.0, dtype=torch.uint8)
 
         if self.mode == 'train':
-            self.sel_group_id = np.array([49,  8, 19, 47, 25, 27, 42, 50, 24, 40,  3, 45,  6, 41,  2, 17, 14,
-                                          10,  5, 26, 12, 33,  9, 11, 32, 54, 28,  7, 39, 51, 46, 44, 30, 13,
-                                          18,  0, 34, 43, 52, 29])
-            num_of_tasks = self.sel_group_id.shape[0]
-            if self.args.ratio < 1.0:
-                # 논문대로 16개임
-                num_of_tasks = int(num_of_tasks*self.args.ratio)
-                self.sel_group_id = self.sel_group_id[:num_of_tasks]
+            if extreme_dist is None:
+                self.sel_group_id = np.array([49,  8, 19, 47, 25, 27, 42, 50, 24, 40,  3, 45,  6, 41,  2, 17, 14,
+                                              10,  5, 26, 12, 33,  9, 11, 32, 54, 28,  7, 39, 51, 46, 44, 30, 13,
+                                              18,  0, 34, 43, 52, 29])
+                num_of_tasks = self.sel_group_id.shape[0]
+                if self.args.ratio < 1.0:
+                    # 논문대로 16개임
+                    num_of_tasks = int(num_of_tasks*self.args.ratio)
+                    self.sel_group_id = self.sel_group_id[:num_of_tasks]
+            else:
+                print("extream dist")
+                # 6개 task씩 할당
+                # color는 red, indigo, blue, orange, green, violet
+                if extreme_dist == "color":
+                    # violet
+                    # 3개 full, 3개 half
+                    # 0도 1개, 90도 1개, 180도 1개, 270도 2개
+                    # (violet, full, 270) : 3
+                    # (violet, half, 180) : 6
+                    # (violet, full, 180) : 2
+                    # (violet, half, 90) : 5
+                    # (violet, half, 270) : 7
+                    # (violet, full, 0) : 0
+                    self.sel_group_id = np.array([3, 6, 2, 5, 7, 0])
+                # scale full/half
+                elif extreme_dist == "scale":
+                    # 모든 색상
+                    # full
+                    # 0 1개, 90 2개, 180 1개, 270 2개
+                    # (red, full, 90) : 49
+                    # (indigo, full, 0): 8
+                    # (blue, full, 270): 19
+                    # (orange, full, 180): 42
+                    # (green, full, 90): 25
+                    # (violet, full, 270): 3
+                    self.sel_group_id = np.array([49, 8, 19, 42, 25, 3])
+                # rotation 0, 90, 180, 270
+                elif extreme_dist == "rotation":
+                    # 모든 색상(blue는 없어서 다른색상으로)
+                    # full 3, half 3
+                    # 0도
+                    # (red, half, 0): 52
+                    # (indigo, full, 0): 8
+                    # (blue, full, 0): 16
+                    # (orange, half, 0): 44
+                    # (green, full, 0): 24
+                    # (violet, half, 0): 4
+                    self.sel_group_id = np.array([52, 8, 16, 44, 24, 4])
+                elif extreme_dist == "compare":
+                    # all color
+                    # 3개 full, 3개 half
+                    # 0도 1개, 90도 2개, 180도 1개, 270도 2개
+                    # (red, full, 90) : 49
+                    # (indigo, half, 90): 13
+                    # (blue, full, 0): 16
+                    # (orange, half, 0): 44
+                    # (green, half, 180): 30
+                    # (violet, full, 270): 3
+                    self.sel_group_id = np.array([49, 13, 16, 44, 30, 3])
+                else:
+                    raise NotImplementedError
+
         elif self.mode == 'val':
             self.sel_group_id = np.array([15, 16, 38, 36, 37,  4])
         elif self.mode == 'test':

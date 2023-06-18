@@ -16,6 +16,7 @@ class Flatten(nn.Module):
     def forward(self, x):
         return x.view(x.size(0), -1)
 
+
 class FCNet(nn.Module):
     def __init__(self, args, x_dim, hid_dim):
         super(FCNet, self).__init__()
@@ -54,12 +55,11 @@ class FCNet(nn.Module):
         hidden1_query = self.net[0](inp_query)
 
         hidden1_query, reweighted_query, reweighted_support, lam = self.mixup_data(hidden1_support, label_support, hidden1_query,
-                                                           label_query, lam_mix)
+                                                                                   label_query, lam_mix)
 
         hidden2_query = self.net[1](hidden1_query)
 
         return hidden2_query, reweighted_query, reweighted_support, lam
-
 
     def forward_crossmix(self, x):
 

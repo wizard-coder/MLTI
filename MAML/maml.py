@@ -11,6 +11,7 @@ from torch.distributions import Beta
 from copy import deepcopy
 from enum import Enum
 from learner import Learner
+from rand_conv import RandConvModule
 
 
 class MAML(nn.Module):
@@ -18,7 +19,8 @@ class MAML(nn.Module):
     MAML Learner
     """
 
-    def __init__(self, args, learner: Learner, label_sharing=False, interpolation_block_max=0, beta_dist_alpha=2.0, beta_dist_beta=2.0):
+    def __init__(self, args, learner: Learner, label_sharing=False, interpolation_block_max=0, beta_dist_alpha=2.0, beta_dist_beta=2.0,
+                 rand_conv=False, rand_conv_prob=0.0, rand_conv_mixing=False, rand_conv_multi_std=None, rand_conv_only_support=False):
         """
 
         :param args:
@@ -36,6 +38,12 @@ class MAML(nn.Module):
         self.net = learner
         self.label_sharing = label_sharing
         self.interpolation_block_max = interpolation_block_max
+        self.rand_conv = rand_conv
+        self.rand_conv_prob = rand_conv_prob
+        self.rand_conv_mixing = rand_conv_mixing
+        self.rand_conv_multi_std = rand_conv_multi_std
+        self.rand_conv_only_support = rand_conv_only_support
+        print(self.rand_conv)
 
         self.dist = Beta(torch.FloatTensor(
             [beta_dist_alpha]), torch.FloatTensor([beta_dist_beta]))
@@ -106,6 +114,19 @@ class MAML(nn.Module):
         :param y_qry:   [b, querysz]
         :return:
         """
+
+        if self.rand_conv:
+            rand_conv = RandConvModule(kernel_size=[1, 3, 5, 7],
+                                       in_channels=3,
+                                       out_channels=3,
+                                       mixing=self.rand_conv_mixing,
+                                       identity_prob=self.rand_conv_prob,
+                                       multi_std=self.rand_conv_multi_std).to(self.device)
+
+            x_spt = rand_conv(x_spt).detach()
+
+            if not self.rand_conv_only_support:
+                x_qry = rand_conv(x_qry).detach()
 
         # 1. run the i-th task and compute loss for k=0
         logits = self.net(x_spt, vars=None, bn_training=True)
@@ -183,6 +204,19 @@ class MAML(nn.Module):
         else:
             y_mix_s = y1s
             y_mix_q = y1q
+
+        if self.rand_conv:
+            rand_conv = RandConvModule(kernel_size=[1, 3, 5, 7],
+                                       in_channels=3,
+                                       out_channels=3,
+                                       mixing=self.rand_conv_mixing,
+                                       identity_prob=self.rand_conv_prob,
+                                       multi_std=self.rand_conv_multi_std).to(self.device)
+
+            x_mix_s = rand_conv(x_mix_s).detach()
+
+            if not self.rand_conv_only_support:
+                x_mix_q = rand_conv(x_mix_q).detach()
 
         # inner optimization
         # first iteration
@@ -361,7 +395,7 @@ class MAML(nn.Module):
         # 1. run the i-th task and compute loss for k=0
         logits = net(x_spt)
         loss = F.cross_entropy(logits, y_spt)
-        grad = torch.autograd.grad(loss, net.parameters(), create_graph=True)
+        grad = torch.autograd.grad(loss, net.parameters())
         fast_weights = list(
             map(lambda p: p[1] - self.update_lr * p[0], zip(grad, net.parameters())))
 
@@ -370,7 +404,7 @@ class MAML(nn.Module):
             logits = net(x_spt, fast_weights, bn_training=True)
             loss = F.cross_entropy(logits, y_spt)
             # 2. compute grad on theta_pi
-            grad = torch.autograd.grad(loss, fast_weights, create_graph=True)
+            grad = torch.autograd.grad(loss, fast_weights)
             # 3. theta_pi = theta_pi - train_lr * grad
             fast_weights = list(
                 map(lambda p: p[1] - self.update_lr * p[0], zip(grad, fast_weights)))
@@ -385,3 +419,109 @@ class MAML(nn.Module):
         del net
 
         return acc
+
+    def get_grad(self, x1, y1, x2, y2, num_samples=100, grad_layer=0):
+        # gradient 분포 분석용 코드
+
+        total_grad = []
+        total_label = []
+
+        net = deepcopy(self.net)
+        logits = net(x1)
+        loss = F.cross_entropy(logits, y1)
+
+        grad = torch.autograd.grad(loss, net.parameters())
+
+        total_grad.append(grad[grad_layer].flatten().cpu().numpy())
+        total_label.append('x1_grad')
+
+        net = deepcopy(self.net)
+        logits = net(x2)
+        loss = F.cross_entropy(logits, y2)
+
+        grad = torch.autograd.grad(loss, net.parameters())
+
+        total_grad.append(grad[grad_layer].flatten().cpu().numpy())
+        total_label.append('x2_grad')
+
+        # rand conv
+        for _ in range(num_samples):
+
+            rand_conv = RandConvModule(kernel_size=[1, 3, 5, 7],
+                                       in_channels=3,
+                                       out_channels=3,
+                                       mixing=self.rand_conv_mixing,
+                                       identity_prob=self.rand_conv_prob,
+                                       multi_std=self.rand_conv_multi_std).to(self.device)
+
+            x1_randconv = rand_conv(x1).detach()
+            x2_randconv = rand_conv(x2).detach()
+
+            net = deepcopy(self.net)
+            logits = net(x1_randconv)
+            loss = F.cross_entropy(logits, y1)
+
+            grad = torch.autograd.grad(loss, net.parameters())
+
+            total_grad.append(
+                grad[grad_layer].flatten().cpu().numpy())
+            total_label.append('x1_randconv_grad')
+
+            net = deepcopy(self.net)
+            logits = net(x2_randconv)
+            loss = F.cross_entropy(logits, y2)
+
+            grad = torch.autograd.grad(loss, net.parameters())
+
+            total_grad.append(
+                grad[grad_layer].flatten().cpu().numpy())
+            total_label.append('x2_randconv_grad')
+
+        # mlti
+        for _ in range(num_samples):
+
+            # lamda for interpolation
+            lam_mix = self.dist.sample().to(self.device)
+
+            # task1과 task2를 random하게 섞기위해 task2 suffling
+            task_2_shuffle_id = np.arange(self.args.num_classes)
+            np.random.shuffle(task_2_shuffle_id)
+            task_2_shuffle_id_s = np.array(
+                [np.arange(self.args.update_batch_size) + task_2_shuffle_id[idx] * self.args.update_batch_size for idx in
+                 range(self.args.num_classes)]).flatten()
+
+            x2_shuffle = x2[task_2_shuffle_id_s]
+
+            x_mix_s, lam_s = self.cutmix(x1, x2_shuffle, lam_mix)
+
+            net = deepcopy(self.net)
+            logits = net(x_mix_s)
+            loss = F.cross_entropy(logits, y1)
+
+            grad = torch.autograd.grad(loss, net.parameters())
+
+            total_grad.append(
+                grad[grad_layer].flatten().cpu().numpy())
+            total_label.append('mlti_grad')
+
+            rand_conv = RandConvModule(kernel_size=[1, 3, 5, 7],
+                                       in_channels=3,
+                                       out_channels=3,
+                                       mixing=self.rand_conv_mixing,
+                                       identity_prob=self.rand_conv_prob,
+                                       multi_std=self.rand_conv_multi_std).to(self.device)
+
+            x_mix_s_randconv = rand_conv(x_mix_s).detach()
+
+            net = deepcopy(self.net)
+            logits = net(x_mix_s_randconv)
+            loss = F.cross_entropy(logits, y1)
+
+            grad = torch.autograd.grad(loss, net.parameters())
+
+            total_grad.append(
+                grad[grad_layer].flatten().cpu().numpy())
+
+            total_label.append('mlti_with_randconv_grad')
+
+        return total_grad, total_label

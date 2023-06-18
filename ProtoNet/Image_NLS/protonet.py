@@ -4,17 +4,35 @@ import torch.nn.functional as F
 from utils import euclidean_dist
 import numpy as np
 from torch.distributions import Beta
+from rand_conv import RandConvModule
 
 
 class Protonet(nn.Module):
-    def __init__(self, args, learner):
+    def __init__(self, args, learner, rand_conv=False, rand_conv_prob=0.0, rand_conv_mixing=False):
         super(Protonet, self).__init__()
         self.args = args
         self.learner = learner
         self.dist = Beta(torch.FloatTensor([2]), torch.FloatTensor([2]))
         self.device = args.device
 
+        self.rand_conv = rand_conv
+        self.rand_conv_prob = rand_conv_prob
+        self.rand_conv_mixing = rand_conv_mixing
+
+        print(self.rand_conv)
+
     def forward(self, xs, ys, xq, yq):
+
+        if self.rand_conv and self.args.train:
+            rand_conv = RandConvModule(kernel_size=[1, 3, 5, 7],
+                                       in_channels=3,
+                                       out_channels=3,
+                                       mixing=self.rand_conv_mixing,
+                                       identity_prob=self.rand_conv_prob).to(self.device)
+
+            xs = rand_conv(xs).detach()
+            xq = rand_conv(xq).detach()
+
         x = torch.cat([xs, xq], 0)
 
         z = self.learner(x)
@@ -89,6 +107,16 @@ class Protonet(nn.Module):
 
         x_mix_q, _ = self.mixup_data(x1q, x2q, lam_mix)
 
+        if self.rand_conv:
+            rand_conv = RandConvModule(kernel_size=[1, 3, 5, 7],
+                                       in_channels=3,
+                                       out_channels=3,
+                                       mixing=self.rand_conv_mixing,
+                                       identity_prob=self.rand_conv_prob).to(self.device)
+
+            x_mix_s = rand_conv(x_mix_s).detach()
+            x_mix_q = rand_conv(x_mix_q).detach()
+
         x = torch.cat([x_mix_s, x_mix_q], 0)
 
         z = self.learner(x)
@@ -115,3 +143,106 @@ class Protonet(nn.Module):
         acc_val = torch.eq(y_hat, y1q).float().mean()
 
         return loss_val, acc_val
+
+    def get_proto(self, x1, x2, num_samples=100):
+        # proto 분포 분석용 코드
+
+        total_proto = []
+        total_label = []
+
+        z = self.learner(x1)
+
+        z_dim = z.size(-1)
+
+        z_proto = z[:self.args.num_classes * self.args.update_batch_size].view(self.args.num_classes,
+                                                                               self.args.update_batch_size, z_dim).mean(1)[0].flatten().cpu().detach().numpy()
+
+        total_proto.append(z_proto)
+        total_label.append('x1_proto')
+
+        z = self.learner(x2)
+
+        z_dim = z.size(-1)
+
+        z_proto = z[:self.args.num_classes * self.args.update_batch_size].view(self.args.num_classes,
+                                                                               self.args.update_batch_size, z_dim).mean(1)[0].flatten().cpu().detach().numpy()
+
+        total_proto.append(z_proto)
+        total_label.append('x2_proto')
+
+        # rand conv
+        for _ in range(num_samples):
+
+            rand_conv = RandConvModule(kernel_size=[1, 3, 5, 7],
+                                       in_channels=3,
+                                       out_channels=3,
+                                       mixing=self.rand_conv_mixing,
+                                       identity_prob=self.rand_conv_prob).to(self.device)
+
+            x1_rand_conv = rand_conv(x1).detach()
+            x2_rand_conv = rand_conv(x2).detach()
+
+            z = self.learner(x1_rand_conv)
+
+            z_dim = z.size(-1)
+
+            z_proto = z[:self.args.num_classes * self.args.update_batch_size].view(self.args.num_classes,
+                                                                                   self.args.update_batch_size, z_dim).mean(1)[0].flatten().cpu().detach().numpy()
+
+            total_proto.append(z_proto)
+            total_label.append('x1_randconv_proto')
+
+            z = self.learner(x2_rand_conv)
+
+            z_dim = z.size(-1)
+
+            z_proto = z[:self.args.num_classes * self.args.update_batch_size].view(self.args.num_classes,
+                                                                                   self.args.update_batch_size, z_dim).mean(1)[0].flatten().cpu().detach().numpy()
+
+            total_proto.append(z_proto)
+            total_label.append('x2_randconv_proto')
+
+        # mlti
+
+        for _ in range(num_samples):
+            lam_mix = self.dist.sample().to(self.device)
+
+            task_2_shuffle_id = np.arange(self.args.num_classes)
+            np.random.shuffle(task_2_shuffle_id)
+            task_2_shuffle_id_s = np.array(
+                [np.arange(self.args.update_batch_size) + task_2_shuffle_id[idx] * self.args.update_batch_size for idx in
+                 range(self.args.num_classes)]).flatten()
+
+            x2_shuffle = x2[task_2_shuffle_id_s]
+
+            x_mix_s, _ = self.mixup_data(x1, x2_shuffle, lam_mix)
+
+            z = self.learner(x_mix_s)
+
+            z_dim = z.size(-1)
+
+            z_proto = z[:self.args.num_classes * self.args.update_batch_size].view(self.args.num_classes,
+                                                                                   self.args.update_batch_size, z_dim).mean(1)[0].flatten().cpu().detach().numpy()
+
+            total_proto.append(z_proto)
+            total_label.append('mlti_proto')
+
+            rand_conv = RandConvModule(kernel_size=[1, 3, 5, 7],
+                                       in_channels=3,
+                                       out_channels=3,
+                                       mixing=self.rand_conv_mixing,
+                                       identity_prob=self.rand_conv_prob).to(self.device)
+
+            x_mix_s_rand_conv = rand_conv(x_mix_s).detach()
+
+            z = self.learner(x_mix_s_rand_conv)
+
+            z_dim = z.size(-1)
+
+            z_proto = z[:self.args.num_classes * self.args.update_batch_size].view(self.args.num_classes,
+                                                                                   self.args.update_batch_size, z_dim).mean(1)[0].flatten().cpu().detach().numpy()
+
+            total_proto.append(z_proto)
+            total_label.append('mlti_randconv_proto')
+
+        return total_proto, total_label

@@ -168,7 +168,7 @@ class ISIC(Dataset):
         else:
             for eachkey in self.data.keys():
                 self.data[eachkey] = torch.tensor(np.transpose(
-                    self.data[eachkey], (0, 3, 1, 2)))
+                    self.data[eachkey], (0, 3, 1, 2)), dtype=torch.uint8)
 
     def __len__(self):
         return self.args.metatrain_iterations * self.args.meta_batch_size

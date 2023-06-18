@@ -4,17 +4,35 @@ import torch.nn.functional as F
 from utils import euclidean_dist
 import numpy as np
 from torch.distributions import Beta
+from rand_conv import RandConvModule
 
 
 class Protonet(nn.Module):
-    def __init__(self, args, learner):
+    def __init__(self, args, learner, rand_conv=False, rand_conv_prob=0.0, rand_conv_mixing=False):
         super(Protonet, self).__init__()
         self.args = args
         self.learner = learner
         self.dist = Beta(torch.FloatTensor([2]), torch.FloatTensor([2]))
         self.device = args.device
 
+        self.rand_conv = rand_conv
+        self.rand_conv_prob = rand_conv_prob
+        self.rand_conv_mixing = rand_conv_mixing
+
+        print(self.rand_conv)
+
     def forward(self, xs, ys, xq, yq):
+
+        if self.rand_conv and self.args.train:
+            rand_conv = RandConvModule(kernel_size=[1, 3, 5, 7],
+                                       in_channels=3,
+                                       out_channels=3,
+                                       mixing=self.rand_conv_mixing,
+                                       identity_prob=self.rand_conv_prob).to(self.device)
+
+            xs = rand_conv(xs).detach()
+            xq = rand_conv(xq).detach()
+
         x = torch.cat([xs, xq], 0)
 
         z = self.learner(x)
@@ -92,6 +110,16 @@ class Protonet(nn.Module):
         x_mix_s, _ = self.mixup_data(x1s, x2s, lam_mix)
 
         x_mix_q, _ = self.mixup_data(x1q, x2q, lam_mix)
+
+        if self.rand_conv:
+            rand_conv = RandConvModule(kernel_size=[1, 3, 5, 7],
+                                       in_channels=3,
+                                       out_channels=3,
+                                       mixing=self.rand_conv_mixing,
+                                       identity_prob=self.rand_conv_prob).to(self.device)
+
+            x_mix_s = rand_conv(x_mix_s).detach()
+            x_mix_q = rand_conv(x_mix_q).detach()
 
         x = torch.cat([x_mix_s, x_mix_q], 0)
 

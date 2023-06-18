@@ -12,7 +12,7 @@ parser.add_argument('--datasource', default='NCI', type=str,
                     help='NCI')
 parser.add_argument('--num_classes', default=2, type=int,
                     help='number of classes used in classification (e.g. 5-way classification).')
-parser.add_argument('--num_test_task', default=250,
+parser.add_argument('--num_test_task', default=8000,
                     type=int, help='number of test tasks.')
 parser.add_argument('--test_epoch', default=-1, type=int,
                     help='test epoch, only work when test start')
@@ -59,6 +59,8 @@ parser.add_argument('--train_consistency_test', type=int, default=0, choices=ran
                     help='학습마다 성능차이가 얼마나는지 테스트')
 parser.add_argument('--task_num_consistency_test', type=int, nargs='+',
                     help='test시 tesk num 마다 성능차이 시험')
+parser.add_argument('--reproduce', action='store_true',
+                    help='reproduce the result')
 
 args = parser.parse_args()
 args.datadir = os.path.expanduser(args.datadir)
@@ -80,7 +82,17 @@ exp_string += '.trial{}'.format(args.trial)
 if args.ratio < 1.0:
     exp_string += '.ratio{}'.format(args.ratio)
 
+if args.reproduce:
+    exp_string += '.reproduce'
+
 print(exp_string)
+
+if args.reproduce:
+    random.seed(0)
+    np.random.seed(0)
+    torch.manual_seed(0)
+    torch.backends.cudnn.benchmark = False
+    torch.backends.cudnn.deterministic = True
 
 
 def train(args, protonet, optimiser):
@@ -160,7 +172,7 @@ def test(args, protonet):
 
     if args.task_num_consistency_test is None:
         for step, (x_spt, y_spt, x_qry, y_qry) in enumerate(dataloader):
-            if step > 600:
+            if step > args.num_test_task:
                 break
             x_spt, y_spt, x_qry, y_qry = x_spt.squeeze(0).to(args.device), y_spt.squeeze(0).to(args.device), \
                 x_qry.squeeze(0).to(args.device), y_qry.squeeze(
@@ -171,7 +183,7 @@ def test(args, protonet):
         res_acc = np.array(res_acc)
 
         print('acc is {}, ci95 is {}'.format(np.mean(res_acc), 1.96 * np.std(res_acc) / np.sqrt(
-            600 * args.meta_batch_size)))
+            args.num_test_task * args.meta_batch_size)))
 
         return np.mean(res_acc)
     else:
@@ -242,7 +254,7 @@ def main():
 
                 for task_num, mean, std, max, min in zip(args.task_num_consistency_test, acc_mean, acc_std, acc_max, acc_min):
                     print(
-                        f'Task num: {task_num}, mean: {mean}, std: {std}, max: {max}, min: {min}')
+                        f'Task num: {task_num}, mean: {mean}, std: {std}, max: {max}, min: {min}, max-min: {max-min}')
         else:
             random.seed(0)
             np.random.seed(0)
@@ -259,7 +271,7 @@ def main():
                 protonet.load_state_dict(torch.load(model_file))
                 accs.append(test(args, protonet))
             print(
-                f'mean: {np.mean(accs)}, std: {np.std(accs)}, max: {np.max(accs)}, min: {np.min(accs)}')
+                f'mean: {np.mean(accs)}, std: {np.std(accs)}, max: {np.max(accs)}, min: {np.min(accs)}, max-min: {np.max(accs)-np.min(accs)}')
 
 
 if __name__ == '__main__':

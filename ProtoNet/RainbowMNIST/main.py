@@ -14,7 +14,7 @@ parser.add_argument('--datasource', default='rainbowmnist', type=str,
                     help='rainbowmnist')
 parser.add_argument('--num_classes', default=10, type=int,
                     help='number of classes used in classification (e.g. 5-way classification).')
-parser.add_argument('--num_test_task', default=600,
+parser.add_argument('--num_test_task', default=8000,
                     type=int, help='number of test tasks.')
 parser.add_argument('--test_epoch', default=-1, type=int,
                     help='test epoch, only work when test start')
@@ -58,7 +58,14 @@ parser.add_argument('--train_consistency_test', type=int, default=0, choices=ran
 parser.add_argument('--task_num_consistency_test', type=int, nargs='+',
                     help='test시 tesk num 마다 성능차이 시험')
 parser.add_argument('--augmentation', type=str,
-                    choices=['augmix', 'trivialaug', 'randaug'])
+                    choices=['augmix', 'trivialaug', 'randaug', 'randconv'])
+parser.add_argument('--reproduce', action='store_true',
+                    help='reproduce the result')
+parser.add_argument('--randconv_prob', type=float,
+                    default=0, help='randconv prob')
+parser.add_argument('--randconv_mix', action='store_true', help='randconv mix')
+parser.add_argument('--rmnist_extreme_dist', type=str,
+                    choices=['color', 'scale', 'rotation', 'compare'])
 
 
 args = parser.parse_args()
@@ -82,7 +89,25 @@ if args.ratio < 1.0:
 if args.augmentation is not None:
     exp_string += f'.aug_{args.augmentation}'
 
+if args.augmentation == 'randconv':
+    exp_string += f'.randconv_prob_{args.randconv_prob}'
+    if args.randconv_mix:
+        exp_string += '.randconv_mix'
+
+if args.rmnist_extreme_dist is not None:
+    exp_string += f'.rmnist_extreme_dist_{args.rmnist_extreme_dist}'
+
+if args.reproduce:
+    exp_string += '.reproduce'
+
 print(exp_string)
+
+if args.reproduce:
+    random.seed(0)
+    np.random.seed(0)
+    torch.manual_seed(0)
+    torch.backends.cudnn.benchmark = False
+    torch.backends.cudnn.deterministic = True
 
 
 def train(args, protonet, optimiser):
@@ -91,16 +116,17 @@ def train(args, protonet, optimiser):
     print_loss, print_acc, print_loss_support = 0.0, 0.0, 0.0
 
     transform = None
-    if args.augmentation == "augmux":
+    if args.augmentation == "augmix":
         transform = transforms.Compose([transforms.AugMix()])
-    elif args.augmentation == "trivial":
+    elif args.augmentation == "trivialaug":
         transform = transforms.Compose(
             [transforms.TrivialAugmentWide()])
-    elif args.augmentation == "rand":
+    elif args.augmentation == "randaug":
         transform = transforms.Compose(
             [transforms.RandAugment()])
 
-    dataloader = RainbowMNIST(args, 'train', transform=transform)
+    dataloader = RainbowMNIST(
+        args, 'train', transform=transform, extreme_dist=args.rmnist_extreme_dist)
 
     if not os.path.exists(args.logdir + '/' + exp_string + '/'):
         os.makedirs(args.logdir + '/' + exp_string + '/')
@@ -166,7 +192,7 @@ def test(args, protonet):
 
     if args.task_num_consistency_test is None:
         for step, (x_spt, y_spt, x_qry, y_qry) in enumerate(dataloader):
-            if step > 600:
+            if step > args.num_test_task:
                 break
             x_spt, y_spt, x_qry, y_qry = x_spt.squeeze(0).to(args.device), y_spt.squeeze(0).to(args.device), \
                 x_qry.squeeze(0).to(args.device), y_qry.squeeze(
@@ -225,8 +251,11 @@ def main():
     learner = Conv_Standard(
         args=args, x_dim=3, hid_dim=args.num_filters, z_dim=args.num_filters).to(args.device)
 
+    rand_conv = args.augmentation == 'randconv'
+
     # protonet
-    protonet = Protonet(args, learner)
+    protonet = Protonet(args, learner, rand_conv=rand_conv,
+                        rand_conv_prob=args.randconv_prob, rand_conv_mixing=args.randconv_mix)
 
     if args.resume == 1 and args.train == 1:
         model_file = '{0}/{2}/model{1}'.format(
@@ -255,7 +284,7 @@ def main():
 
                 for task_num, mean, std, max, min in zip(args.task_num_consistency_test, acc_mean, acc_std, acc_max, acc_min):
                     print(
-                        f'Task num: {task_num}, mean: {mean}, std: {std}, max: {max}, min: {min}')
+                        f'Task num: {task_num}, mean: {mean}, std: {std}, max: {max}, min: {min}, max-min: {max-min}')
         else:
             random.seed(0)
             np.random.seed(0)
@@ -271,8 +300,8 @@ def main():
                 protonet.learner.load_state_dict(torch.load(model_file))
                 accs.append(test(args, protonet))
 
-        print(
-            f'mean: {np.mean(accs)}, std: {np.std(accs)}, max: {np.max(accs)}, min: {np.min(accs)}')
+            print(
+                f'mean: {np.mean(accs)}, std: {np.std(accs)}, max: {np.max(accs)}, min: {np.min(accs)}, max-min: {np.max(accs)-np.min(accs)}')
 
 
 if __name__ == '__main__':
